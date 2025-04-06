@@ -10,14 +10,20 @@ def parse_request(request_data):
 
 # Returns the HTTP response for a given path
 def get_response(path):
+    if path.startswith("/echo/"):
+        echo_str = path[len("/echo/"):]
+        body = echo_str
+        content_type = "Content-Type: text/plain"
+        content_length = f"Content-Length: {len(body)}"
+        response = f"HTTP/1.1 200 OK\r\n{content_type}\r\n{content_length}\r\n\r\n{body}"
+        return response
+
     responses = {
         "/": "HTTP/1.1 200 OK\r\n\r\n",
     }
-    
-    # Default response if path not found
     default_response = "HTTP/1.1 404 Not Found\r\n\r\n"
-
     return responses.get(path, default_response)
+
 
 
 # Returns the HTTP response for a given path
