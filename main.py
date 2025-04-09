@@ -124,30 +124,64 @@ def get_response(path, headers):
 def handle_request(client_socket):
     request_data = b""
     while b"\r\n\r\n" not in request_data:
-        request_data += client_socket.recv(1024)
+        chunk = client_socket.recv(1024)
+        if not chunk:
+            break
+        request_data += chunk
 
     headers_end = request_data.find(b"\r\n\r\n")
+    if headers_end == -1:
+        client_socket.send(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+        return
+
     header_bytes = request_data[:headers_end].decode()
     method, path, version, headers = parse_request(header_bytes)
 
     body = b""
-    if method == "POST":
+    if method in ["POST", "PUT"]:
         content_length = int(headers.get("Content-Length", 0))
         body = request_data[headers_end+4:]
         while len(body) < content_length:
             body += client_socket.recv(1024)
 
         if path.startswith("/files/"):
-            filename = path[len("/files/"):] 
+            filename = path[len("/files/"):]
             file_path = os.path.join(FILES_DIR, filename)
             with open(file_path, "wb") as f:
                 f.write(body)
-            response = b"HTTP/1.1 201 Created\r\n\r\n"
+            status = b"201 Created" if method == "POST" else b"200 OK"
+            response = b"HTTP/1.1 " + status + b"\r\n\r\n"
             client_socket.send(response)
             return
 
-    response = get_response(path, headers)
-    client_socket.send(response)
+    elif method == "DELETE":
+        if path.startswith("/files/"):
+            filename = path[len("/files/"):]
+            file_path = os.path.join(FILES_DIR, filename)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                response = b"HTTP/1.1 200 OK\r\n\r\n"
+            else:
+                response = b"HTTP/1.1 404 Not Found\r\n\r\n"
+            client_socket.send(response)
+            return
+
+    elif method == "HEAD":
+        response = get_response(path, headers)
+        if b"\r\n\r\n" in response:
+            headers_only = response.split(b"\r\n\r\n")[0] + b"\r\n\r\n"
+            client_socket.send(headers_only)
+        else:
+            client_socket.send(response)
+        return
+
+    # GET fallback
+    if method == "GET":
+        response = get_response(path, headers)
+        client_socket.send(response)
+    else:
+        client_socket.send(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n")
+
 
 
 def handle_connection(client_socket):
