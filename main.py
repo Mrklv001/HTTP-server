@@ -1,4 +1,5 @@
 import socket
+import threading
 
 # Parse the request data to extract the HTTP method, path and version
 def parse_request(request_data):
@@ -9,7 +10,7 @@ def parse_request(request_data):
     headers = {}
     for line in lines[1:]:
         if line == "":
-            break  # конец заголовков
+            break
         if ": " in line:
             key, value = line.split(": ", 1)
             headers[key] = value
@@ -53,27 +54,33 @@ def handle_request(client_socket):
     client_socket.send(response.encode())
 
 
+
+def handle_connection(client_socket):
+    try:
+        handle_request(client_socket)
+    finally:
+        client_socket.close()
+
+
 def main():
     server_socket = socket.create_server(("localhost", 4221))
     print("Server is running on port 4221...")
 
     try:
         while True:
-            # Wait for a connection
-            print("Wait for a connection...")
             client_socket, addr = server_socket.accept()
-
             print(f"Connection from {addr} has been established")
 
-            # Handle the client's request
-            handle_request(client_socket)
+            # Create a new thread to process the client
+            thread = threading.Thread(target=handle_connection, args=(client_socket,))
+            thread.start()
 
-            client_socket.close()
     except KeyboardInterrupt:
         print("\nServer is shutting down.")
     finally:
         server_socket.close()
         print("Server has been shut down.")
+
 
 
 if __name__== "__main__":
