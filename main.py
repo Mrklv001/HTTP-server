@@ -12,7 +12,7 @@ def parse_request(request_data):
     headers = {}
     for line in lines[1:]:
         if line == "":
-            break 
+            break  # конец заголовков
         if ": " in line:
             key, value = line.split(": ", 1)
             headers[key] = value
@@ -48,7 +48,7 @@ def get_response(path, headers):
                 f"Content-Length: {len(content)}\r\n"
                 "\r\n"
             )
-            return headers.encode() + content
+            return headers.encode() + content  # байтовая строка
         else:
             return b"HTTP/1.1 404 Not Found\r\n\r\n"
 
@@ -62,11 +62,31 @@ def get_response(path, headers):
 
 # Returns the HTTP response for a given path
 def handle_request(client_socket):
-    request_data = client_socket.recv(1024).decode()
-    if not request_data:
-        return
+    request_data = b""
+    
+    while b"\r\n\r\n" not in request_data:
+        request_data += client_socket.recv(1024)
+    
+    headers_end = request_data.find(b"\r\n\r\n")
+    header_bytes = request_data[:headers_end].decode()
+    method, path, version, headers = parse_request(header_bytes)
+    
+    body = b""
+    if method == "POST":
+        content_length = int(headers.get("Content-Length", 0))
+        body = request_data[headers_end+4:]
+        while len(body) < content_length:
+            body += client_socket.recv(1024)
 
-    method, path, version, headers = parse_request(request_data)
+        if path.startswith("/files/"):
+            filename = path[len("/files/"):]
+            file_path = os.path.join(FILES_DIR, filename)
+            with open(file_path, "wb") as f:
+                f.write(body)
+            response = b"HTTP/1.1 201 Created\r\n\r\n"
+            client_socket.send(response)
+            return
+
     response = get_response(path, headers)
     if isinstance(response, str):
         response = response.encode()
@@ -97,7 +117,6 @@ def main():
             client_socket, addr = server_socket.accept()
             print(f"Connection from {addr} has been established")
 
-            # Create a new thread to process the client
             thread = threading.Thread(target=handle_connection, args=(client_socket,))
             thread.start()
 
