@@ -5,14 +5,30 @@ def parse_request(request_data):
     lines = request_data.split('\r\n')
     start_line = lines[0]
     method, path, version = start_line.split(' ')
-    return method, path, version
+
+    headers = {}
+    for line in lines[1:]:
+        if line == "":
+            break  # конец заголовков
+        if ": " in line:
+            key, value = line.split(": ", 1)
+            headers[key] = value
+
+    return method, path, version, headers
 
 
 # Returns the HTTP response for a given path
-def get_response(path):
+def get_response(path, headers):
     if path.startswith("/echo/"):
         echo_str = path[len("/echo/"):]
         body = echo_str
+        content_type = "Content-Type: text/plain"
+        content_length = f"Content-Length: {len(body)}"
+        response = f"HTTP/1.1 200 OK\r\n{content_type}\r\n{content_length}\r\n\r\n{body}"
+        return response
+
+    if path == "/user-agent":
+        body = headers.get("User-Agent", "")
         content_type = "Content-Type: text/plain"
         content_length = f"Content-Length: {len(body)}"
         response = f"HTTP/1.1 200 OK\r\n{content_type}\r\n{content_length}\r\n\r\n{body}"
@@ -32,9 +48,10 @@ def handle_request(client_socket):
     if not request_data:
         return
     
-    method, path, version = parse_request(request_data)
-    response = get_response(path)
+    method, path, version, headers = parse_request(request_data)
+    response = get_response(path, headers)
     client_socket.send(response.encode())
+
 
 def main():
     server_socket = socket.create_server(("localhost", 4221))
