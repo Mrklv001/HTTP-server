@@ -3,6 +3,7 @@ import threading
 import argparse
 import os
 import gzip
+import ssl
 
 # Parse the request data to extract the HTTP method, path and version
 def parse_request(request_data):
@@ -121,22 +122,29 @@ FILES_DIR = args.directory
 
 
 def main():
-    server_socket = socket.create_server(("localhost", 4221))
-    print("Server is running on port 4221...")
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind(("localhost", 4221))
+    server_socket.listen()
+
+    # Оборачивание сокета в SSL
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certfile="cert.pem", keyfile="key.pem")
+    secure_socket = context.wrap_socket(server_socket, server_side=True)
+
+    print("🔒 HTTPS Server is running on https://localhost:4221")
 
     try:
         while True:
-            client_socket, addr = server_socket.accept()
-            print(f"Connection from {addr} has been established")
+            client_socket, addr = secure_socket.accept()
+            print(f"🔗 Secure connection from {addr} has been established")
 
-            # Create a new thread to process the client
             thread = threading.Thread(target=handle_connection, args=(client_socket,))
             thread.start()
 
     except KeyboardInterrupt:
         print("\nServer is shutting down.")
     finally:
-        server_socket.close()
+        secure_socket.close()
         print("Server has been shut down.")
 
 
