@@ -12,7 +12,7 @@ def parse_request(request_data):
     headers = {}
     for line in lines[1:]:
         if line == "":
-            break  # конец заголовков
+            break
         if ": " in line:
             key, value = line.split(": ", 1)
             headers[key] = value
@@ -22,18 +22,24 @@ def parse_request(request_data):
 
 # Returns the HTTP response for a given path
 def get_response(path, headers):
+    accept_encoding = headers.get("Accept-Encoding", "")
+    supports_gzip = "gzip" in accept_encoding
+
+    def add_common_headers(body, content_type):
+        headers = f"Content-Type: {content_type}\r\nContent-Length: {len(body)}"
+        if supports_gzip:
+            headers += "\r\nContent-Encoding: gzip"
+        return headers
+
     if path.startswith("/echo/"):
-        echo_str = path[len("/echo/"):]
-        body = echo_str
-        content_type = "Content-Type: text/plain"
-        content_length = f"Content-Length: {len(body)}"
-        return f"HTTP/1.1 200 OK\r\n{content_type}\r\n{content_length}\r\n\r\n{body}"
+        body = path[len("/echo/"):].encode()
+        header_section = add_common_headers(body, "text/plain")
+        return f"HTTP/1.1 200 OK\r\n{header_section}\r\n\r\n".encode() + body
 
     if path == "/user-agent":
-        body = headers.get("User-Agent", "")
-        content_type = "Content-Type: text/plain"
-        content_length = f"Content-Length: {len(body)}"
-        return f"HTTP/1.1 200 OK\r\n{content_type}\r\n{content_length}\r\n\r\n{body}"
+        body = headers.get("User-Agent", "").encode()
+        header_section = add_common_headers(body, "text/plain")
+        return f"HTTP/1.1 200 OK\r\n{header_section}\r\n\r\n".encode() + body
 
     if path.startswith("/files/"):
         filename = path[len("/files/"):]
@@ -42,13 +48,8 @@ def get_response(path, headers):
         if os.path.isfile(file_path):
             with open(file_path, "rb") as f:
                 content = f.read()
-            headers = (
-                "HTTP/1.1 200 OK\r\n"
-                "Content-Type: application/octet-stream\r\n"
-                f"Content-Length: {len(content)}\r\n"
-                "\r\n"
-            )
-            return headers.encode() + content  # байтовая строка
+            header_section = add_common_headers(content, "application/octet-stream")
+            return f"HTTP/1.1 200 OK\r\n{header_section}\r\n\r\n".encode() + content
         else:
             return b"HTTP/1.1 404 Not Found\r\n\r\n"
 
