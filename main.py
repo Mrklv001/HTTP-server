@@ -2,6 +2,7 @@ import socket
 import threading
 import argparse
 import os
+import gzip
 
 # Parse the request data to extract the HTTP method, path and version
 def parse_request(request_data):
@@ -12,7 +13,7 @@ def parse_request(request_data):
     headers = {}
     for line in lines[1:]:
         if line == "":
-            break
+            break  # конец заголовков
         if ": " in line:
             key, value = line.split(": ", 1)
             headers[key] = value
@@ -25,19 +26,26 @@ def get_response(path, headers):
     accept_encoding = headers.get("Accept-Encoding", "")
     supports_gzip = "gzip" in accept_encoding
 
-    def add_common_headers(body, content_type):
+    def maybe_compress(body: bytes):
+        if supports_gzip:
+            return gzip.compress(body)
+        return body
+
+    def add_common_headers(body: bytes, content_type: str):
         headers = f"Content-Type: {content_type}\r\nContent-Length: {len(body)}"
         if supports_gzip:
             headers += "\r\nContent-Encoding: gzip"
         return headers
 
     if path.startswith("/echo/"):
-        body = path[len("/echo/"):].encode()
+        raw_body = path[len("/echo/"):].encode()
+        body = maybe_compress(raw_body)
         header_section = add_common_headers(body, "text/plain")
         return f"HTTP/1.1 200 OK\r\n{header_section}\r\n\r\n".encode() + body
 
     if path == "/user-agent":
-        body = headers.get("User-Agent", "").encode()
+        raw_body = headers.get("User-Agent", "").encode()
+        body = maybe_compress(raw_body)
         header_section = add_common_headers(body, "text/plain")
         return f"HTTP/1.1 200 OK\r\n{header_section}\r\n\r\n".encode() + body
 
@@ -47,7 +55,8 @@ def get_response(path, headers):
 
         if os.path.isfile(file_path):
             with open(file_path, "rb") as f:
-                content = f.read()
+                raw_content = f.read()
+            content = maybe_compress(raw_content)
             header_section = add_common_headers(content, "application/octet-stream")
             return f"HTTP/1.1 200 OK\r\n{header_section}\r\n\r\n".encode() + content
         else:
@@ -60,11 +69,11 @@ def get_response(path, headers):
 
 
 
-
 # Returns the HTTP response for a given path
 def handle_request(client_socket):
     request_data = b""
     
+    # Step 1: Read the Headlines
     while b"\r\n\r\n" not in request_data:
         request_data += client_socket.recv(1024)
     
@@ -72,6 +81,7 @@ def handle_request(client_socket):
     header_bytes = request_data[:headers_end].decode()
     method, path, version, headers = parse_request(header_bytes)
     
+    # Step 2: Read the body, if any
     body = b""
     if method == "POST":
         content_length = int(headers.get("Content-Length", 0))
@@ -88,6 +98,7 @@ def handle_request(client_socket):
             client_socket.send(response)
             return
 
+    # The rest of the processing is GET and other things.
     response = get_response(path, headers)
     if isinstance(response, str):
         response = response.encode()
@@ -118,6 +129,7 @@ def main():
             client_socket, addr = server_socket.accept()
             print(f"Connection from {addr} has been established")
 
+            # Create a new thread to process the client
             thread = threading.Thread(target=handle_connection, args=(client_socket,))
             thread.start()
 
