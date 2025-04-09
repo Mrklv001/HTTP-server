@@ -1,5 +1,7 @@
 import socket
 import threading
+import argparse
+import os
 
 # Parse the request data to extract the HTTP method, path and version
 def parse_request(request_data):
@@ -10,7 +12,7 @@ def parse_request(request_data):
     headers = {}
     for line in lines[1:]:
         if line == "":
-            break
+            break 
         if ": " in line:
             key, value = line.split(": ", 1)
             headers[key] = value
@@ -25,21 +27,36 @@ def get_response(path, headers):
         body = echo_str
         content_type = "Content-Type: text/plain"
         content_length = f"Content-Length: {len(body)}"
-        response = f"HTTP/1.1 200 OK\r\n{content_type}\r\n{content_length}\r\n\r\n{body}"
-        return response
+        return f"HTTP/1.1 200 OK\r\n{content_type}\r\n{content_length}\r\n\r\n{body}"
 
     if path == "/user-agent":
         body = headers.get("User-Agent", "")
         content_type = "Content-Type: text/plain"
         content_length = f"Content-Length: {len(body)}"
-        response = f"HTTP/1.1 200 OK\r\n{content_type}\r\n{content_length}\r\n\r\n{body}"
-        return response
+        return f"HTTP/1.1 200 OK\r\n{content_type}\r\n{content_length}\r\n\r\n{body}"
 
-    responses = {
-        "/": "HTTP/1.1 200 OK\r\n\r\n",
-    }
-    default_response = "HTTP/1.1 404 Not Found\r\n\r\n"
-    return responses.get(path, default_response)
+    if path.startswith("/files/"):
+        filename = path[len("/files/"):]
+        file_path = os.path.join(FILES_DIR, filename)
+
+        if os.path.isfile(file_path):
+            with open(file_path, "rb") as f:
+                content = f.read()
+            headers = (
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: application/octet-stream\r\n"
+                f"Content-Length: {len(content)}\r\n"
+                "\r\n"
+            )
+            return headers.encode() + content
+        else:
+            return b"HTTP/1.1 404 Not Found\r\n\r\n"
+
+    if path == "/":
+        return b"HTTP/1.1 200 OK\r\n\r\n"
+
+    return b"HTTP/1.1 404 Not Found\r\n\r\n"
+
 
 
 
@@ -48,10 +65,13 @@ def handle_request(client_socket):
     request_data = client_socket.recv(1024).decode()
     if not request_data:
         return
-    
+
     method, path, version, headers = parse_request(request_data)
     response = get_response(path, headers)
-    client_socket.send(response.encode())
+    if isinstance(response, str):
+        response = response.encode()
+    client_socket.send(response)
+
 
 
 
@@ -60,6 +80,12 @@ def handle_connection(client_socket):
         handle_request(client_socket)
     finally:
         client_socket.close()
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--directory', type=str, required=False, default='.')
+args = parser.parse_args()
+FILES_DIR = args.directory
 
 
 def main():
