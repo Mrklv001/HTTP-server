@@ -1,4 +1,5 @@
-key.pem
-cert.pem
+cert/key.pem
+cert/cert.pem
 .DS_Store
 .idea
+__pycache__
