@@ -250,3 +250,39 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def http_redirect_server():
+    http_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    http_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    http_socket.bind(('localhost', 8080))
+    http_socket.listen(5)
+    logging.info("Redirect HTTP server running on http://localhost:8080")
+
+    try:
+        while True:
+            client_socket, addr = http_socket.accept()
+            data = client_socket.recv(1024).decode()
+            if data:
+                try:
+                    path = data.split(' ')[1]
+                    location = f"https://localhost:8443{path}"
+                    response = (
+                        "HTTP/1.1 301 Moved Permanently\r\n"
+                        f"Location: {location}\r\n"
+                        "Connection: close\r\n"
+                        "\r\n"
+                    )
+                    client_socket.send(response.encode())
+                except Exception as e:
+                    logging.warning(f"Bad request from {addr}: {e}")
+            client_socket.close()
+    except Exception as e:
+        logging.error(f"Redirect server error: {e}")
+    finally:
+        http_socket.close()
+
+
+if __name__ == "__main__":
+    threading.Thread(target=http_redirect_server, daemon=True).start()
+    main()
